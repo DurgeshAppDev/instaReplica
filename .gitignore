@@ -2,6 +2,13 @@
 #
 .DS_Store
 
+# Windows
+#
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
 # Xcode
 #
 build/
@@ -35,11 +42,27 @@ local.properties
 !debug.keystore
 .kotlin/
 
-# node.js
+# Uploaded user avatars & media
+backend/uploads/
+**/uploads/
+
+# node.js & logs
 #
 node_modules/
-npm-debug.log
-yarn-error.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.log
+error_log
+php_error.log
+
+# Environment variables & local credentials
+#
+.env
+.env*.local
+.env.development
+.env.test
+.env.production
 
 # fastlane
 #
