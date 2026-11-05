@@ -2,6 +2,7 @@ import React, { useState, useEffect, useContext, useCallback } from 'react';
 import {
   View,
   Text,
+  TextInput,
   Image,
   TouchableOpacity,
   FlatList,
@@ -12,11 +13,13 @@ import {
   RefreshControl,
   Alert,
   Linking,
+  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { AuthContext } from '../context/AuthContext';
-import { getUserProfile, toggleFollowUser } from '../api/userApi';
+import { getUserProfile, toggleFollowUser, getFollowList } from '../api/userApi';
+import UserItem from '../components/UserItem';
 
 const { width } = Dimensions.get('window');
 const GRID_SIZE = width / 3;
@@ -29,7 +32,8 @@ const HIGHLIGHTS = [
 ];
 
 const ProfileScreen = ({ navigation, route }) => {
-  const { user: currentUser, logoutUser, refreshCurrentUser } = useContext(AuthContext);
+  const { user: currentUser, logoutUser, refreshCurrentUser, updateFollowingCount } =
+    useContext(AuthContext);
 
   const routeUserId = route.params?.userId;
   const isOwnProfile = !routeUserId || routeUserId === currentUser?.id;
@@ -41,6 +45,89 @@ const ProfileScreen = ({ navigation, route }) => {
   const [isFollowing, setIsFollowing] = useState(false);
   const [followLoading, setFollowLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('grid'); // 'grid' | 'reels' | 'tagged'
+
+  // Followers / Following Modal states
+  const [followModalVisible, setFollowModalVisible] = useState(false);
+  const [followListType, setFollowListType] = useState('followers');
+  const [followListData, setFollowListData] = useState([]);
+  const [followListLoading, setFollowListLoading] = useState(false);
+  const [followSearchQuery, setFollowSearchQuery] = useState('');
+
+  const fetchFollowList = useCallback(
+    async (typeToFetch) => {
+      if (!targetUserId) return;
+      setFollowListLoading(true);
+      try {
+        const res = await getFollowList(
+          targetUserId,
+          typeToFetch,
+          currentUser?.id || 0
+        );
+        if (res && res.status === 'success' && Array.isArray(res.data)) {
+          setFollowListData(res.data);
+        }
+      } catch (err) {
+        console.error('Fetch follow list error:', err);
+      } finally {
+        setFollowListLoading(false);
+      }
+    },
+    [targetUserId, currentUser?.id]
+  );
+
+  const openFollowListModal = (type) => {
+    setFollowListType(type);
+    setFollowSearchQuery('');
+    setFollowModalVisible(true);
+    fetchFollowList(type);
+  };
+
+  const filteredFollowList = followListData.filter((u) => {
+    if (!followSearchQuery.trim()) return true;
+    const q = followSearchQuery.toLowerCase();
+    return (
+      (u.username && u.username.toLowerCase().includes(q)) ||
+      (u.full_name && u.full_name.toLowerCase().includes(q))
+    );
+  });
+
+  const handleFollowToggleInModal = async (itemId) => {
+    if (!currentUser?.id) return;
+
+    setFollowListData((prev) =>
+      prev.map((item) =>
+        item.id === itemId ? { ...item, is_following: !item.is_following } : item
+      )
+    );
+
+    try {
+      const res = await toggleFollowUser(currentUser.id, itemId);
+      if (res && res.status === 'success') {
+        setFollowListData((prev) =>
+          prev.map((item) =>
+            item.id === itemId ? { ...item, is_following: res.is_following } : item
+          )
+        );
+        if (typeof res.following_count === 'number') {
+          updateFollowingCount(res.following_count);
+        }
+      }
+    } catch {
+      setFollowListData((prev) =>
+        prev.map((item) =>
+          item.id === itemId ? { ...item, is_following: !item.is_following } : item
+        )
+      );
+    }
+  };
+
+  const handlePressUserFromModal = (selectedUser) => {
+    setFollowModalVisible(false);
+    navigation.navigate('UserProfile', {
+      userId: selectedUser.id,
+      username: selectedUser.username,
+    });
+  };
 
   const fetchProfile = useCallback(async () => {
     if (!targetUserId) return;
@@ -97,6 +184,9 @@ const ProfileScreen = ({ navigation, route }) => {
           ...prev,
           followers_count: res.followers_count ?? (res.is_following ? prevCount + 1 : prevCount - 1),
         }));
+        if (typeof res.following_count === 'number') {
+          updateFollowingCount(res.following_count);
+        }
       } else {
         setIsFollowing(prevFollowing);
         setProfileData((prev) => ({ ...prev, followers_count: prevCount }));
@@ -135,6 +225,9 @@ const ProfileScreen = ({ navigation, route }) => {
         <View style={styles.topNavBar}>
           <View style={styles.navUserWrap}>
             <Text style={styles.navUsername}>@{displayUser?.username || 'instagram'}</Text>
+            {displayUser?.id <= 3 && (
+              <Ionicons name="checkmark-circle" size={16} color="#0095F6" style={styles.verifiedBadge} />
+            )}
             <Ionicons name="chevron-down" size={16} color="#000" style={styles.navChevron} />
           </View>
           <View style={styles.navIconsRow}>
@@ -166,14 +259,20 @@ const ProfileScreen = ({ navigation, route }) => {
             <Text style={styles.statNum}>{displayUser?.posts_count ?? posts.length}</Text>
             <Text style={styles.statLabel}>posts</Text>
           </View>
-          <View style={styles.statBox}>
+          <TouchableOpacity
+            style={styles.statBox}
+            onPress={() => openFollowListModal('followers')}
+            activeOpacity={0.7}>
             <Text style={styles.statNum}>{displayUser?.followers_count ?? 0}</Text>
             <Text style={styles.statLabel}>followers</Text>
-          </View>
-          <View style={styles.statBox}>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.statBox}
+            onPress={() => openFollowListModal('following')}
+            activeOpacity={0.7}>
             <Text style={styles.statNum}>{displayUser?.following_count ?? 0}</Text>
             <Text style={styles.statLabel}>following</Text>
-          </View>
+          </TouchableOpacity>
         </View>
       </View>
 
@@ -209,6 +308,11 @@ const ProfileScreen = ({ navigation, route }) => {
           <TouchableOpacity style={[styles.actionBtn, styles.flex1]}>
             <Text style={styles.actionBtnText}>Share profile</Text>
           </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.actionBtn, styles.iconBtn]}
+            onPress={() => navigation.navigate('SearchTab')}>
+            <Ionicons name="person-add-outline" size={16} color="#000" />
+          </TouchableOpacity>
         </View>
       ) : (
         <View style={styles.btnRow}>
@@ -234,6 +338,9 @@ const ProfileScreen = ({ navigation, route }) => {
           </TouchableOpacity>
           <TouchableOpacity style={[styles.actionBtn, styles.flex1]}>
             <Text style={styles.actionBtnText}>Message</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.actionBtn, styles.iconBtn]}>
+            <Ionicons name="person-add-outline" size={16} color="#000" />
           </TouchableOpacity>
         </View>
       )}
@@ -324,6 +431,121 @@ const ProfileScreen = ({ navigation, route }) => {
           </View>
         }
       />
+
+      {/* Followers / Following Modal */}
+      <Modal
+        visible={followModalVisible}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setFollowModalVisible(false)}>
+        <SafeAreaView style={styles.modalSafeArea} edges={['top', 'left', 'right']}>
+          {/* Modal Header */}
+          <View style={styles.modalHeader}>
+            <TouchableOpacity
+              style={styles.modalCloseBtn}
+              onPress={() => setFollowModalVisible(false)}>
+              <Ionicons name="chevron-back" size={26} color="#000" />
+            </TouchableOpacity>
+            <Text style={styles.modalHeaderTitle}>
+              {displayUser?.username || 'user'}
+            </Text>
+            <View style={styles.modalHeaderSpacer} />
+          </View>
+
+          {/* Followers / Following Tabs */}
+          <View style={styles.modalTabsRow}>
+            <TouchableOpacity
+              style={[
+                styles.modalTabItem,
+                followListType === 'followers' && styles.modalTabItemActive,
+              ]}
+              onPress={() => {
+                setFollowListType('followers');
+                fetchFollowList('followers');
+              }}>
+              <Text
+                style={[
+                  styles.modalTabText,
+                  followListType === 'followers' && styles.modalTabTextActive,
+                ]}>
+                {displayUser?.followers_count ?? 0} Followers
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.modalTabItem,
+                followListType === 'following' && styles.modalTabItemActive,
+              ]}
+              onPress={() => {
+                setFollowListType('following');
+                fetchFollowList('following');
+              }}>
+              <Text
+                style={[
+                  styles.modalTabText,
+                  followListType === 'following' && styles.modalTabTextActive,
+                ]}>
+                {displayUser?.following_count ?? 0} Following
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Search Input in Modal */}
+          <View style={styles.modalSearchContainer}>
+            <Ionicons name="search" size={16} color="#8E8E8E" style={styles.modalSearchIcon} />
+            <TextInput
+              style={styles.modalSearchInput}
+              placeholder="Search"
+              placeholderTextColor="#8E8E8E"
+              value={followSearchQuery}
+              onChangeText={setFollowSearchQuery}
+              autoCapitalize="none"
+              clearButtonMode="while-editing"
+            />
+          </View>
+
+          {/* Followers / Following List */}
+          {followListLoading ? (
+            <View style={styles.modalCentered}>
+              <ActivityIndicator size="large" color="#0095F6" />
+            </View>
+          ) : (
+            <FlatList
+              data={filteredFollowList}
+              keyExtractor={(item) => item.id.toString()}
+              renderItem={({ item }) => (
+                <UserItem
+                  item={item}
+                  currentUserId={currentUser?.id}
+                  onPressUser={handlePressUserFromModal}
+                  onToggleFollow={handleFollowToggleInModal}
+                />
+              )}
+              ListEmptyComponent={
+                <View style={styles.modalEmptyWrap}>
+                  <Ionicons
+                    name={
+                      followListType === 'followers'
+                        ? 'people-outline'
+                        : 'person-add-outline'
+                    }
+                    size={48}
+                    color="#C7C7CD"
+                  />
+                  <Text style={styles.modalEmptyTitle}>
+                    {followListType === 'followers' ? 'No Followers Yet' : 'Not Following Anyone'}
+                  </Text>
+                  <Text style={styles.modalEmptySub}>
+                    {followListType === 'followers'
+                      ? 'When someone follows this account, they will appear here.'
+                      : 'Accounts that this user follows will appear here.'}
+                  </Text>
+                </View>
+              }
+            />
+          )}
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -342,6 +564,7 @@ const styles = StyleSheet.create({
   },
   navUserWrap: { flexDirection: 'row', alignItems: 'center' },
   navUsername: { fontSize: 20, fontWeight: 'bold', color: '#000' },
+  verifiedBadge: { marginLeft: 4 },
   navChevron: { marginLeft: 4 },
   navIconsRow: { flexDirection: 'row', alignItems: 'center', gap: 16 },
   navIconButton: { padding: 2 },
@@ -391,6 +614,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  iconBtn: { paddingHorizontal: 10 },
   flex1: { flex: 1 },
   actionBtnText: { color: '#000', fontWeight: '600', fontSize: 13 },
   followBtn: { backgroundColor: '#0095F6' },
@@ -457,6 +681,98 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#8E8E8E',
     marginTop: 4,
+  },
+  modalSafeArea: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderBottomWidth: 0.5,
+    borderBottomColor: '#DBDBDB',
+  },
+  modalCloseBtn: {
+    padding: 6,
+  },
+  modalHeaderTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#000000',
+  },
+  modalHeaderSpacer: {
+    width: 36,
+  },
+  modalTabsRow: {
+    flexDirection: 'row',
+    borderBottomWidth: 0.5,
+    borderBottomColor: '#DBDBDB',
+  },
+  modalTabItem: {
+    flex: 1,
+    paddingVertical: 12,
+    alignItems: 'center',
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
+  },
+  modalTabItemActive: {
+    borderBottomColor: '#000000',
+  },
+  modalTabText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#8E8E8E',
+  },
+  modalTabTextActive: {
+    color: '#000000',
+    fontWeight: '700',
+  },
+  modalSearchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EFEFEF',
+    marginHorizontal: 16,
+    marginVertical: 10,
+    paddingHorizontal: 12,
+    height: 38,
+    borderRadius: 10,
+  },
+  modalSearchIcon: {
+    marginRight: 8,
+  },
+  modalSearchInput: {
+    flex: 1,
+    fontSize: 14,
+    color: '#000000',
+    paddingVertical: 0,
+  },
+  modalCentered: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingTop: 40,
+  },
+  modalEmptyWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 32,
+    paddingTop: 60,
+  },
+  modalEmptyTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#000000',
+    marginTop: 14,
+  },
+  modalEmptySub: {
+    fontSize: 13,
+    color: '#8E8E8E',
+    textAlign: 'center',
+    marginTop: 6,
+    lineHeight: 18,
   },
 });
 

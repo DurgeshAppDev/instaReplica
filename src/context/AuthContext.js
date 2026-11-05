@@ -91,6 +91,19 @@ export const AuthProvider = ({ children }) => {
   };
 
   /**
+   * Immediately keep logged in user's following count synchronized
+   */
+  const updateFollowingCount = (newCount) => {
+    setUser((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        following_count: typeof newCount === 'number' ? newCount : Math.max(0, (prev.following_count || 0) + 1),
+      };
+    });
+  };
+
+  /**
    * Save professional profile input data to phpMyAdmin MySQL
    */
   const saveProfileData = async ({
@@ -166,6 +179,7 @@ export const AuthProvider = ({ children }) => {
         loginUser,
         registerUser,
         uploadProfilePhoto,
+        updateFollowingCount,
         saveProfileData,
         skipProfileSetup,
         refreshCurrentUser,

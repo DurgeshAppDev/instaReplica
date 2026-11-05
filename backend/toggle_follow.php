@@ -8,12 +8,14 @@ $follower_id = intval($data->follower_id ?? $_POST['follower_id'] ?? 0);
 $following_id = intval($data->following_id ?? $_POST['following_id'] ?? 0);
 
 if ($follower_id > 0 && $following_id > 0 && $follower_id !== $following_id) {
+    // Check if relationship already exists
     $check = $conn->prepare("SELECT id FROM follows WHERE follower_id = ? AND following_id = ?");
     $check->bind_param("ii", $follower_id, $following_id);
     $check->execute();
     $check_res = $check->get_result();
 
     if ($check_res && $check_res->num_rows > 0) {
+        // Unfollow
         $del = $conn->prepare("DELETE FROM follows WHERE follower_id = ? AND following_id = ?");
         $del->bind_param("ii", $follower_id, $following_id);
         $del->execute();
@@ -21,6 +23,7 @@ if ($follower_id > 0 && $following_id > 0 && $follower_id !== $following_id) {
         $action = "unfollowed";
         $is_following = false;
     } else {
+        // Follow
         $ins = $conn->prepare("INSERT INTO follows (follower_id, following_id) VALUES (?, ?)");
         $ins->bind_param("ii", $follower_id, $following_id);
         $ins->execute();
@@ -30,17 +33,22 @@ if ($follower_id > 0 && $following_id > 0 && $follower_id !== $following_id) {
     }
     $check->close();
 
-    $followers_count = (int)($conn->query("SELECT COUNT(*) as count FROM follows WHERE following_id = $following_id")->fetch_assoc()['count'] ?? 0);
+    // Recalculate target user's followers count
+    $target_followers = (int)($conn->query("SELECT COUNT(*) as count FROM follows WHERE following_id = $following_id")->fetch_assoc()['count'] ?? 0);
+
+    // Recalculate current user's following count
+    $my_following = (int)($conn->query("SELECT COUNT(*) as count FROM follows WHERE follower_id = $follower_id")->fetch_assoc()['count'] ?? 0);
 
     echo json_encode([
         "status" => "success",
         "action" => $action,
         "is_following" => $is_following,
-        "followers_count" => $followers_count
+        "followers_count" => $target_followers,
+        "following_count" => $my_following
     ]);
 } else {
     echo json_encode(["status" => "error", "message" => "Invalid follower_id or following_id parameters"]);
 }
+
 $conn->close();
 ?>
-

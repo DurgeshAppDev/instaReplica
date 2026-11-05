@@ -1,4 +1,5 @@
 import React, { useContext } from 'react';
+import { View, Image, TouchableOpacity, StyleSheet } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -14,13 +15,20 @@ import { AuthContext } from '../context/AuthContext';
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
 
-// Stack for Search Tab (allows navigating from Search Screen -> User's Profile Screen)
+const HeaderRightMenu = () => (
+  <TouchableOpacity style={styles.headerRightMenuBtn}>
+    <Ionicons name="ellipsis-horizontal" size={20} color="#000" />
+  </TouchableOpacity>
+);
+
+// Stack for Search Tab
 const SearchStack = () => (
   <Stack.Navigator
     screenOptions={{
       headerStyle: { backgroundColor: '#FFFFFF' },
       headerTintColor: '#000000',
       headerTitleStyle: { fontWeight: '700', fontSize: 16 },
+      headerShadowVisible: false,
     }}>
     <Stack.Screen
       name="SearchMain"
@@ -33,18 +41,20 @@ const SearchStack = () => (
       options={({ route }) => ({
         title: route.params?.username ? `@${route.params.username}` : 'Profile',
         headerBackTitleVisible: false,
+        headerRight: HeaderRightMenu,
       })}
     />
   </Stack.Navigator>
 );
 
-// Stack for Profile Tab (allows navigating from Own Profile -> Edit Profile)
+// Stack for Profile Tab
 const ProfileStack = () => (
   <Stack.Navigator
     screenOptions={{
       headerStyle: { backgroundColor: '#FFFFFF' },
       headerTintColor: '#000000',
       headerTitleStyle: { fontWeight: '700', fontSize: 16 },
+      headerShadowVisible: false,
     }}>
     <Stack.Screen
       name="ProfileMain"
@@ -54,36 +64,53 @@ const ProfileStack = () => (
     <Stack.Screen
       name="EditProfile"
       component={EditProfileScreen}
-      options={{ title: 'Edit Profile', headerBackTitleVisible: false }}
+      options={{ headerShown: false }}
     />
   </Stack.Navigator>
 );
 
-const renderTabBarIcon = (routeName, focused, color) => {
-  let iconName;
+const renderCustomTabIcon = (routeName, focused, userAvatar) => {
   if (routeName === 'SearchTab') {
-    iconName = focused ? 'search' : 'search-outline';
+    return (
+      <Ionicons
+        name={focused ? 'search' : 'search-outline'}
+        size={27}
+        color={focused ? '#000000' : '#262626'}
+      />
+    );
   } else if (routeName === 'ProfileTab') {
-    iconName = focused ? 'person-circle' : 'person-circle-outline';
+    return (
+      <View
+        style={[
+          styles.tabAvatarWrapper,
+          focused && styles.tabAvatarActiveWrapper,
+        ]}>
+        <Image
+          source={{
+            uri:
+              userAvatar ||
+              'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100',
+          }}
+          style={styles.tabAvatar}
+        />
+      </View>
+    );
   }
-  return <Ionicons name={iconName} size={28} color={color} />;
+  return null;
 };
 
 const AppNavigator = () => {
   const { user, needsProfileSetup } = useContext(AuthContext);
   const insets = useSafeAreaInsets();
 
-  // If not logged in, show Login Screen
   if (!user) {
     return <LoginScreen />;
   }
 
-  // If user just logged in and needs profile setup / onboarding, show ProfileSetupScreen
   if (needsProfileSetup) {
     return <ProfileSetupScreen />;
   }
 
-  // Main App with Tabs
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -99,7 +126,8 @@ const AppNavigator = () => {
           paddingBottom: insets.bottom > 0 ? insets.bottom : 8,
           paddingTop: 6,
         },
-        tabBarIcon: ({ focused, color }) => renderTabBarIcon(route.name, focused, color),
+        tabBarIcon: ({ focused }) =>
+          renderCustomTabIcon(route.name, focused, user?.avatar_url),
       })}>
       <Tab.Screen
         name="SearchTab"
@@ -114,5 +142,27 @@ const AppNavigator = () => {
     </Tab.Navigator>
   );
 };
+
+const styles = StyleSheet.create({
+  headerRightMenuBtn: {
+    padding: 6,
+    marginRight: 2,
+  },
+  tabAvatarWrapper: {
+    padding: 1.5,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: 'transparent',
+  },
+  tabAvatarActiveWrapper: {
+    borderColor: '#000000',
+  },
+  tabAvatar: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: '#EAEAEA',
+  },
+});
 
 export default AppNavigator;

@@ -157,6 +157,16 @@ export const searchUsers = async (query = '', currentUserId = 0) => {
 };
 
 /**
+ * Get followers or following list for a user
+ */
+export const getFollowList = async (userId, type = 'followers', currentUserId = 0) => {
+  return await requestWithFallback(
+    `get_follow_list.php?user_id=${userId}&type=${type}&current_user_id=${currentUserId}`,
+    { method: 'GET' }
+  );
+};
+
+/**
  * Toggle follow/unfollow between two users
  */
 export const toggleFollowUser = async (followerId, followingId) => {
